@@ -90,4 +90,35 @@ def validate_repo_name(name):
         return name
     raise ValueError("Invalid characters in repo name")
 
-def 
+def validate_owner(owner):
+    if not isinstance(owner, str):
+        raise ValueError("Owner must be a string")
+    if not owner:
+        raise ValueError("Owner cannot be empty")
+    if len(owner) > 39:
+        raise ValueError("Owner is too long")
+    if owner.startswith("-") or owner.endswith("-"):
+        raise ValueError("Owner cannot start or end with a hyphen")
+    if not re.fullmatch(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$", owner):
+        raise ValueError("Invalid owner name")
+    return owner
+
+def validate_ref(ref):
+    if ref is None:
+        return None
+    if not isinstance(ref, str):
+        raise ValueError("Ref must be a string")
+    if not ref:
+        raise ValueError("Ref cannot be empty")
+    if ref.startswith("-"):
+        raise ValueError("Ref cannot start with a hyphen")
+    if ".." in ref:
+        raise ValueError("Ref cannot contain '..'")
+    if any(char.isspace() or unicodedata.category(char) == "Cc" for char in ref):
+        raise ValueError("Ref cannot contain spaces or control characters")
+    if any(char in "~^:?*[" + "\\" for char in ref):
+        raise ValueError("Ref contains invalid characters")
+    return ref
+
+def build_clone_url(owner: str, name: str) -> str:
+    return f"https://github.com/{owner}/{name}.git"
