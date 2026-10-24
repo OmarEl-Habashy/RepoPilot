@@ -1,12 +1,12 @@
 # Plan: Repository Ingestion Agent (GitHub Pull Agent)
 
-First stage of the RepoPilot pipeline. **Scope for now:** take a GitHub repo link, validate it, download (clone) it locally, run available static analyzers for detected languages, and emit a structured artifact for the next agent (Code Understanding).
+First stage of the RepoPilot pipeline. **Scope for now:** take a GitHub repo link, validate it, download (clone) it locally, run available static analyzers for detected languages, emit a structured artifact for the next agent (Code Understanding), and provide a Streamlit UI for this workflow.
 
 ## 1. Goal & Non-Goals
 
 **Goal:** `link in -> local copy on disk + analysis report out`.
 
-**Non-goals (later stages):** AST parsing, RAG indexing, dependency graphs, running repository tests, LLM calls, and the Streamlit UI.
+**Non-goals (later stages):** AST parsing, RAG indexing, dependency graphs, running repository tests, and LLM calls.
 
 ## 2. Input / Output Contract
 
@@ -56,6 +56,7 @@ This report is written beside the clone; it does not modify the cloned repositor
 Github_Pull_Agent/
 ├─ PLAN.md
 ├─ requirements.txt
+├─ app.py              # Streamlit UI for repository ingestion and results
 ├─ main.py              # CLI: python main.py <url> [--ref X] [--force]
 ├─ try_clone.py         # Interactive clone + static-analysis runner
 ├─ agent/
@@ -100,9 +101,12 @@ Github_Pull_Agent/
 ## 8. Done Criteria
 
 - The clone runner produces a local copy and an `analysis.json` report.
+- The Streamlit UI accepts a repository URL and optional ref, then displays the analysis results and offers the JSON report for download.
 - Supported source files are analyzed with the corresponding installed tool; missing tools and skipped languages are reported clearly.
 - Invalid or inaccessible links fail with a clear error and leave no junk on disk.
 - Unit tests pass.
+
+Run the UI from this directory with `streamlit run app.py`.
 
 ## 9. Future Hooks
 
