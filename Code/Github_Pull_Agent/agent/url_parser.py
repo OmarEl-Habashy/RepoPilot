@@ -1,92 +1,89 @@
 from dataclasses import dataclass
 import unicodedata
-import urllib
 import re
+from urllib.parse import unquote, urlparse
 
 @dataclass(frozen=True)
 class RepoRef:
-    owner : str
-    name : str
-    ref : str | None
-    clone_url : str
+    owner: str
+    name: str
+    ref: str | None
+    clone_url: str
     
-def _clean_input(raw) -> str : 
-    if(raw == None | raw.strip() == "" | len(raw.strip()) == 0):
+def _clean_input(raw: str) -> str:
+    if not isinstance(raw, str) or not raw.strip():
         raise ValueError("Invalid URL")
-    elif(len(raw.strip()) > 500):
+    if len(raw.strip()) > 500:
         raise ValueError("URL is too long")
-    elif("github.com" not in raw):
-        raise ValueError("URL is not a github URL")
-    elif any(unicodedata.category(char) in ("Cc", "Cf") for char in raw):
-        raise ValueError("Input rejected: Control or format characters detected!")  
-    else:
-        return raw.strip()
+    if any(unicodedata.category(char) in ("Cc", "Cf") for char in raw):
+        raise ValueError("Input rejected: Control or format characters detected!")
+    return raw.strip()
 
-def _detect_format(s : string) -> string:
-    #HTTPS:
-    if(s.startswith("https://")):
+def _detect_format(s: str) -> str:
+    if s.startswith("https://"):
         return "HTTPS"
-    #SSH:
-    elif(s.startswith("git@github.com:")):
+    if s.startswith("git@github.com:"):
         return "SSH"
-    else:
-        raise ValueError("URL format not supported")
+    return "SHORTHAND"
 
-def _parse_https(s):
-    parsed_url = urllib.parse.urlparse(s)
-    if parsed_url.netloc != "github.com":
+def _extract_ref(segments: list[str]) -> str | None:
+    if not segments:
+        return None
+    if segments[0] not in ("tree", "commit") or len(segments) < 2:
+        raise ValueError("Invalid GitHub repository URL")
+    return "/".join(segments[1:])
+
+def _make_repo_ref(owner: str, name: str, ref: str | None = None) -> RepoRef:
+    owner = validate_owner(owner)
+    name = validate_repo_name(_strip_git_suffix(name))
+    ref = validate_ref(ref)
+    return RepoRef(owner, name, ref, build_clone_url(owner, name))
+
+def _parse_https(s: str) -> RepoRef:
+    parsed_url = urlparse(s)
+    if (
+        parsed_url.scheme != "https"
+        or parsed_url.netloc.lower() != "github.com"
+        or parsed_url.query
+        or parsed_url.fragment
+    ):
         raise ValueError("URL is not a github URL")
-    else:
-        path = parsed_url.path.strip("/")
-        if path.endswith(".git"):
-            path = path[:-4]
-    
-    parts = path.split("/", 2)
-    if len(parts) != 2:
+    parts = [unquote(part) for part in parsed_url.path.strip("/").split("/")]
+    if len(parts) < 2 or not parts[0] or not parts[1]:
         raise ValueError("Invalid github repository URL")
     owner = parts[0]
     name = parts[1]
-    clone_url = f"https://github.com/{owner}/{name}.git"
-    return RepoRef(owner, name, None, clone_url)
+    ref = _extract_ref(parts[2:])
+    if name.endswith(".git") and ref is not None:
+        raise ValueError("A .git URL cannot include a ref path")
+    return _make_repo_ref(owner, name, ref)
 
-def _parse_ssh(s):
-    if not s.startswith("git@github.com"):
+def _parse_ssh(s: str) -> RepoRef:
+    prefix = "git@github.com:"
+    if not s.startswith(prefix):
         raise ValueError("Not SSH URL")
-    if s.endswith(".git"):
-        path = s[:-4]
-    else:
-        path = s
-    path = path[len("git@github.com"):]
-    parts  = path.split("/",2)
-    if len(parts) != 2:
+    parts = s[len(prefix):].split("/")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
         raise ValueError("Invalid SSH URL")
     owner = parts[0]
     name = parts[1]
-    clone_url = f"https://github.com/{owner}/{name}.git"
-    return RepoRef(owner, name, None, clone_url)
+    return _make_repo_ref(owner, name)
 
-def _parse_shorthand(s):
-    parts = s.split("/",2)
-    if(parts > 2 | parts < 2):
+def _parse_shorthand(s: str) -> RepoRef:
+    parts = s.split("/")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
         raise ValueError("Invalid URL format")
     owner = parts[0]
     name = parts[1]
-    clone_url = f"https://github.com/{owner}/{name}.git"
-    return RepoRef(owner, name, None, clone_url)
-
-def _extract_ref(segments):
-    parts = segments.split("/",)
-    if parts[2] in ("tree", "commit"):
-        return "/".joing(segments[3:])
-    return None
+    return _make_repo_ref(owner, name)
 
 def _strip_git_suffix(name):
     return name[:-4] if name.endswith(".git") else name 
 
 def validate_repo_name(name):
-    if not (3 <= len(name) <= 100):
+    if not isinstance(name, str) or not (1 <= len(name) <= 100):
         raise ValueError("Repo name is either too short or too long")
-    if re.match("^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$",name):
+    if re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9._-]{0,99})", name):
         return name
     raise ValueError("Invalid characters in repo name")
 
@@ -122,3 +119,13 @@ def validate_ref(ref):
 
 def build_clone_url(owner: str, name: str) -> str:
     return f"https://github.com/{owner}/{name}.git"
+
+def parse_repo_url(raw: str) -> RepoRef:
+    """Parse a GitHub HTTPS, SSH, or owner/repository shorthand reference."""
+    cleaned = _clean_input(raw)
+    url_format = _detect_format(cleaned)
+    if url_format == "HTTPS":
+        return _parse_https(cleaned)
+    if url_format == "SSH":
+        return _parse_ssh(cleaned)
+    return _parse_shorthand(cleaned)
